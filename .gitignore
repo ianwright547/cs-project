@@ -1,0 +1,38 @@
+# Secrets — never commit these
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials.json
+
+# Node
+node_modules/
+dist/
+build/
+.vite/
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+*.egg-info/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# Data — large or generated files
+data/samples/raw/
+*.sqlite
+*.db
