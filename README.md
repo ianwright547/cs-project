@@ -1,4 +1,4 @@
-# THRESHOLD
+# CS Course
 
 A free course that teaches people to code by giving them a job.
 
