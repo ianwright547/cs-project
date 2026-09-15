@@ -1,0 +1,45 @@
+{
+  "ServiceName": "threshold",
+  "SourceConfiguration": {
+    "AutoDeploymentsEnabled": false,
+    "AuthenticationConfiguration": {
+      "AccessRoleArn": "REPLACE_WITH_APPRUNNER_ECR_ACCESS_ROLE_ARN"
+    },
+    "ImageRepository": {
+      "ImageIdentifier": "REPLACE_WITH_ACCOUNT_ID.dkr.ecr.REPLACE_WITH_REGION.amazonaws.com/threshold:REPLACE_WITH_IMAGE_TAG",
+      "ImageRepositoryType": "ECR",
+      "ImageConfiguration": {
+        "Port": "8000",
+        "RuntimeEnvironmentVariables": {
+          "RUN_MIGRATIONS": "1",
+          "APP_URL": "https://REPLACE_WITH_APP_RUNNER_URL_OR_DOMAIN"
+        },
+        "RuntimeEnvironmentSecrets": {
+          "DATABASE_URL": "REPLACE_WITH_DATABASE_URL_SECRET_ARN"
+        }
+      }
+    }
+  },
+  "InstanceConfiguration": {
+    "Cpu": "1 vCPU",
+    "Memory": "2 GB",
+    "InstanceRoleArn": "REPLACE_WITH_APPRUNNER_INSTANCE_ROLE_ARN"
+  },
+  "HealthCheckConfiguration": {
+    "Protocol": "HTTP",
+    "Path": "/health",
+    "Interval": 10,
+    "Timeout": 5,
+    "HealthyThreshold": 1,
+    "UnhealthyThreshold": 5
+  },
+  "NetworkConfiguration": {
+    "EgressConfiguration": {
+      "EgressType": "VPC",
+      "VpcConnectorArn": "REPLACE_WITH_VPC_CONNECTOR_ARN"
+    },
+    "IngressConfiguration": {
+      "IsPubliclyAccessible": true
+    }
+  }
+}

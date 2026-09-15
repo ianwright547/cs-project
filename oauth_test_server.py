@@ -95,13 +95,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 <p class="muted">Provider: {user["provider"]}<br>{user.get("email", "")}</p>
                 <a class="secondary" href="/logout">Sign out</a></div>'''
         else:
-            content = '''<div class="card"><div class="eyebrow">THRESHOLD</div>
+            content = '''<div class="card"><div class="eyebrow">Code Practice</div>
                 <h1>Create account<br>or sign in.</h1>
                 <p class="muted">Choose a provider to test OAuth login.</p>
                 <a class="button google" href="/login/google">Continue with Google</a>
                 <a class="button github" href="/login/github">Continue with GitHub</a></div>'''
         self.send_html(f'''<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
-            <title>Threshold — Sign in</title><style>
+            <title>Code Practice — Sign in</title><style>
             *{{box-sizing:border-box}}body{{margin:0;background:#101312;color:#f2f0e9;font:16px system-ui,sans-serif;min-height:100vh;display:grid;place-items:center}}
             .card{{width:min(440px,calc(100% - 32px));padding:42px;background:#1b211e;border:1px solid #354039;border-radius:18px;box-shadow:0 20px 60px #0006}}
             .eyebrow{{color:#a7d96b;font-size:12px;letter-spacing:.18em;font-weight:700}}h1{{font-size:42px;line-height:1.03;margin:14px 0 16px;letter-spacing:-.04em}}.muted{{color:#aeb8af;line-height:1.6;margin-bottom:28px}}
@@ -156,7 +156,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 user = {"provider": "google", "name": profile.get("name"), "email": profile.get("email")}
             else:
                 token = read_json("https://github.com/login/oauth/access_token", urllib.parse.urlencode({"code": code, "client_id": os.getenv("GITHUB_CLIENT_ID"), "client_secret": os.getenv("GITHUB_CLIENT_SECRET"), "redirect_uri": callback}).encode(), {"Accept": "application/json", "Content-Type": "application/x-www-form-urlencoded"})
-                profile = read_json("https://api.github.com/user", headers={"Authorization": f"Bearer {token['access_token']}", "Accept": "application/vnd.github+json", "User-Agent": "threshold-oauth-test"})
+                profile = read_json("https://api.github.com/user", headers={"Authorization": f"Bearer {token['access_token']}", "Accept": "application/vnd.github+json", "User-Agent": "code-practice-oauth-test"})
                 user = {"provider": "github", "name": profile.get("name") or profile.get("login"), "email": profile.get("email") or ""}
             self.redirect("/", f"session={signed_session(user)}; Path=/; HttpOnly; SameSite=Lax")
         except Exception as error:
