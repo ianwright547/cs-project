@@ -1,4 +1,4 @@
-# CS Project
+# CS Course
 
 A site for learning Git and GitHub through lessons, quizzes, and practice in a browser terminal. Practice problems include automatic checks.
 
