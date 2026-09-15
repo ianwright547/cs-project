@@ -1,7 +1,7 @@
-# Secrets — never commit these
+# Secrets
 .env
 .env.*
-!.env.example
+.env.example
 *.pem
 *.key
 credentials.json
@@ -32,7 +32,26 @@ Thumbs.db
 !.vscode/extensions.json
 .idea/
 
-# Data — large or generated files
+# Generated data
 data/samples/raw/
 *.sqlite
 *.db
+
+# Personal notes and assistant settings
+/AI_CONTEXT.md
+/CONSTRAINTS.md
+/AGENTS.md
+/CLAUDE.md
+/docs/decisions/
+/docs/7-DAY-PLAN.md
+/notes/
+/personal/
+/.agents/
+/.claude/
+/.codex/
+
+# Local test output
+coverage/
+playwright-report/
+test-results/
+*.tsbuildinfo
