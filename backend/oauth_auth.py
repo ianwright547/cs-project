@@ -1,4 +1,4 @@
-"""Reusable Google and GitHub OAuth helpers for the future Threshold app.
+"""Reusable Google and GitHub OAuth helpers for the future Code Practice app.
 
 The temporary test page in ``oauth_test_server.py`` uses the same provider
 endpoints. Import these helpers when the real frontend/backend are ready.
@@ -59,10 +59,17 @@ def exchange_code(provider, code, app_url):
     request = urllib.request.Request(PROVIDERS[provider]["token"], data=form, headers={"Accept": "application/json", "Content-Type": "application/x-www-form-urlencoded"})
     with urllib.request.urlopen(request, timeout=15) as response:
         token = json.loads(response.read())
-    profile_request = urllib.request.Request(PROVIDERS[provider]["profile"], headers={"Authorization": f"Bearer {token['access_token']}", "Accept": "application/json", "User-Agent": "threshold-oauth"})
+    profile_request = urllib.request.Request(PROVIDERS[provider]["profile"], headers={"Authorization": f"Bearer {token['access_token']}", "Accept": "application/json", "User-Agent": "code-practice-oauth"})
     with urllib.request.urlopen(profile_request, timeout=15) as response:
         profile = json.loads(response.read())
-    return {"provider": provider, "name": profile.get("name") or profile.get("login"), "email": profile.get("email", "")}
+    provider_subject = profile.get("sub") or profile.get("id")
+    return {
+        "provider": provider,
+        "provider_subject": str(provider_subject) if provider_subject is not None else None,
+        "name": profile.get("name") or profile.get("login"),
+        "email": profile.get("email", ""),
+        "github_username": profile.get("login") if provider == "github" else None,
+    }
 
 
 def sign_session(user, session_secret):
