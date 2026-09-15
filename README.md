@@ -91,7 +91,6 @@ Message the other person before you resolve it. Ten seconds of "we both changed 
 ## Docs
 
 - `docs/PRD.md` — what we're building and why
-- `docs/7-DAY-PLAN.md` — the build plan, day by day
 - `docs/SYSTEM-DESIGN.md` — architecture decisions
 - `docs/decisions/` — one file per significant decision
 - `CONSTRAINTS.md` — architectural rules, paste at the top of every AI session
