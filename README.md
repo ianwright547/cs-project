@@ -15,3 +15,5 @@ docker compose up --build -d
 Open http://localhost:8000.
 
 Google and GitHub sign-in need OAuth credentials. Course progress is currently saved in your browser.
+
+For the real Linux terminal, see [sandbox setup](sandbox/README.md).

@@ -1,0 +1,28 @@
+# This is a real interactive Bash session. Learners can use normal job control,
+# tab completion, pipes, editors, and Git's own interactive prompts.
+export PS1='\[\e[38;5;151m\]learner\[\e[0m\]:\w\$ '
+export HISTFILE=/home/learner/.bash_history
+export HISTSIZE=2000
+export HISTFILESIZE=2000
+export EDITOR=nano
+export GIT_EDITOR=nano
+export GIT_PAGER=less
+shopt -s histappend
+__practice_prompt() {
+    builtin printf '%s' "$PWD" > /home/learner/.practice-cwd
+    builtin history -a
+    builtin printf '\e]133;A\a'
+}
+PROMPT_COMMAND=__practice_prompt
+__practice_debug() {
+    if [[ -n "$__practice_last_command" ]]; then
+        builtin printf '%s\0%s\0%s\0' "$1" "$__practice_last_cwd" "$__practice_last_command" >> /home/learner/.practice-records
+    fi
+    if [[ "$2" == '__practice_prompt' ]]; then
+        __practice_last_command=''
+    else
+        __practice_last_command="$2"
+        __practice_last_cwd="$PWD"
+    fi
+}
+trap '__practice_debug "$?" "$BASH_COMMAND"' DEBUG

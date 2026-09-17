@@ -18,6 +18,7 @@ from backend.curriculum import parse_curriculum
 from backend.auth import SESSION_COOKIE, current_user, end_session, start_session, user_payload
 from backend.models import AuthIdentity, User
 from backend.oauth_auth import authorization_url, exchange_code, sign_session, verify_session, PROVIDERS
+from backend.terminal_api import router as terminal_router
 
 
 @asynccontextmanager
@@ -27,6 +28,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+app.include_router(terminal_router)
 
 
 def _session_secret() -> str:

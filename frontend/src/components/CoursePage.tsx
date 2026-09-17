@@ -1,15 +1,18 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { createContext, useContext, useEffect, useState, type FormEvent } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { Activity, CourseContent, QuizResult } from '../content/types';
-import { TerminalPanel } from '../terminal/TerminalPanel';
+import { PracticeWorkspace } from '../terminal/PracticeWorkspace';
 import '../../css/course.css';
 
 function courseLink(course: CourseContent, id: string) {
   return `/course.html?course=${course.id}#${id}`;
 }
+const CommitAliases = createContext<Record<string, string>>({});
 
 function Content({ text, courses }: { text: string; courses: CourseContent[] }) {
+  const aliases = useContext(CommitAliases);
+  const rendered = text.replace(/\b[a-f0-9]{7}\b/g, id => aliases[id]?.slice(0, 7) ?? id);
   return <div className="course-markdown"><Markdown skipHtml remarkPlugins={[remarkGfm]} components={{
     a: ({ href, children }) => {
       if (href?.startsWith('#')) {
@@ -19,10 +22,10 @@ function Content({ text, courses }: { text: string; courses: CourseContent[] }) 
       }
       return <a href={href}>{children}</a>;
     },
-  }}>{text}</Markdown></div>;
+  }}>{rendered}</Markdown></div>;
 }
 
-function Quiz({ activity, course, courses, onComplete }: { activity: Activity; course: CourseContent; courses: CourseContent[]; onComplete?: (activityId: string) => void }) {
+function Quiz({ activity, course, courses, onComplete, nextHref }: { activity: Activity; course: CourseContent; courses: CourseContent[]; onComplete?: (activityId: string) => void; nextHref: string }) {
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [result, setResult] = useState<QuizResult | null>(null);
   const [busy, setBusy] = useState(false);
@@ -69,13 +72,13 @@ function Quiz({ activity, course, courses, onComplete }: { activity: Activity; c
     {error && <p role="alert">{error}</p>}
     {result ? <div role="status" className="quiz-result">
       <p><strong>{result.score} of {result.total} correct.</strong> {result.passed ? 'You reached the suggested score.' : 'Review the linked lessons, then try again.'}</p>
-      <button className="workspace-action" type="button" onClick={() => { setAnswers({}); setResult(null); }}>Try again</button>
-    </div> : <button className="workspace-action primary" disabled={busy || Object.keys(answers).length !== activity.questions?.length}>{busy ? 'Checking…' : 'Check answers'}</button>}
+      {result.passed ? <a className="practice-submit" href={nextHref}>Next lesson →</a> : <button className="workspace-action" type="button" onClick={() => { setAnswers({}); setResult(null); }}>Try again</button>}
+    </div> : <button className="workspace-action primary" disabled={busy || Object.keys(answers).length !== activity.questions?.length}>{busy ? 'Checking…' : 'Submit answers'}</button>}
   </form>;
 }
 
-function InstructionContent({ activity, course, courses, showLesson, onComplete }: {
-  activity: Activity; course: CourseContent; courses: CourseContent[]; showLesson: boolean; onComplete?: (activityId: string) => void;
+function InstructionContent({ activity, course, courses, showLesson, onComplete, nextHref }: {
+  activity: Activity; course: CourseContent; courses: CourseContent[]; showLesson: boolean; onComplete?: (activityId: string) => void; nextHref: string;
 }) {
   const lesson = activity.lesson_id ? course.lessons[activity.lesson_id] : null;
   return <>
@@ -83,7 +86,7 @@ function InstructionContent({ activity, course, courses, showLesson, onComplete 
       <summary>Mini lesson · {lesson.title}</summary>
       <Content text={lesson.body} courses={courses} />
     </details>}
-    {activity.type === 'quiz' ? <Quiz key={activity.id} activity={activity} course={course} courses={courses} onComplete={onComplete} /> : <>
+    {activity.type === 'quiz' ? <Quiz key={activity.id} activity={activity} course={course} courses={courses} onComplete={onComplete} nextHref={nextHref} /> : <>
       <p className="practice-intro">Practice problem · {activity.response}. Use the prepared files and terminal in the workspace.</p>
       {activity.sections?.map(section => {
         const expandable = /hint|author answer|feedback/i.test(section.title);
@@ -105,6 +108,7 @@ export function CoursePage({ courses }: { courses: CourseContent[] }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [mobileView, setMobileView] = useState<'instructions' | 'workspace'>('instructions');
   const [workspaceFocused, setWorkspaceFocused] = useState(false);
+  const [aliases, setAliases] = useState<Record<string, string>>({});
   const [completed, setCompleted] = useState<Set<string>>(() => {
     try { return new Set(JSON.parse(localStorage.getItem(`code-practice-completed:${courseId}`) ?? '[]') as string[]); }
     catch { return new Set(); }
@@ -119,7 +123,7 @@ export function CoursePage({ courses }: { courses: CourseContent[] }) {
   }
 
   useEffect(() => {
-    const update = () => { setHash(window.location.hash.slice(1)); setMobileView('instructions'); setWorkspaceFocused(false); };
+    const update = () => { setHash(window.location.hash.slice(1)); setMobileView('instructions'); setWorkspaceFocused(false); setAliases({}); };
     window.addEventListener('hashchange', update);
     return () => window.removeEventListener('hashchange', update);
   }, []);
@@ -137,6 +141,7 @@ export function CoursePage({ courses }: { courses: CourseContent[] }) {
   const firstLessonTask = activity?.lesson_id && activities.find(item => item.lesson_id === activity.lesson_id)?.id === activity.id;
   const previous = index > 0 ? activities[index - 1] : null;
   const next = index >= 0 && index < activities.length - 1 ? activities[index + 1] : null;
+  const nextHref = next && course ? courseLink(course, next.id) : course?.id === 'git' ? '/course.html?course=github' : '/';
   const progress = course ? (completed.size / course.activity_count) * 100 : 0;
 
   useEffect(() => {
@@ -146,7 +151,7 @@ export function CoursePage({ courses }: { courses: CourseContent[] }) {
 
   if (!course || !activity || !unit) return <main className="wrap page-top"><h1>Course not found</h1><a href="/course.html?course=git">Open the Git course</a></main>;
 
-  return <div className={`course-shell ${sidebarOpen ? 'sidebar-open' : ''} ${workspaceFocused ? 'workspace-focused' : ''} mobile-${mobileView}`}>
+  return <CommitAliases.Provider value={aliases}><div className={`course-shell ${sidebarOpen ? 'sidebar-open' : ''} ${workspaceFocused ? 'workspace-focused' : ''} mobile-${mobileView}`}>
     <a className="skip-link" href="#instructions">Skip to instructions</a>
     <header className="workspace-header">
       <div className="header-left">
@@ -161,6 +166,11 @@ export function CoursePage({ courses }: { courses: CourseContent[] }) {
       <a className="back-link" href="/">Dashboard <span aria-hidden="true">↗</span></a>
     </header>
 
+    <nav className="lesson-toolbar" aria-label="Lesson navigation">
+      <span className="lesson-toolbar-count">Lesson {index + 1} <span>of {course.activity_count}</span></span>
+      <label><span className="sr-only">Unit</span><select value={unit.id} onChange={event => { const selected = course.units.find(unit => unit.id === event.target.value); if (selected) window.location.hash = selected.activities[0].id; }}>{course.units.map(unit => <option key={unit.id} value={unit.id}>Unit {unit.number}: {unit.title}</option>)}</select></label>
+      <label><span className="sr-only">Lesson</span><select value={activity.id} onChange={event => { window.location.hash = event.target.value; }}>{unit.activities.map(activity => <option key={activity.id} value={activity.id}>{activity.title}</option>)}</select></label>
+    </nav>
     <div className="course-frame">
       <aside id="course-sidebar" className="course-sidebar" aria-label="Course lessons">
         <div className="sidebar-heading"><span className="season">Git & GitHub</span><h1>{course.title}</h1><p>{course.activity_count} activities</p></div>
@@ -187,17 +197,17 @@ export function CoursePage({ courses }: { courses: CourseContent[] }) {
             <div className="lesson-copy">
               <div className="lesson-position">{course.title} / Unit {unit.number} / {String(index + 1).padStart(2, '0')}</div>
               <h2 id="lesson-title" tabIndex={-1}>{activity.title}</h2>
-              <InstructionContent key={activity.id} activity={activity} course={course} courses={courses} showLesson={!!firstLessonTask || !!course.lessons[hash]} onComplete={markComplete} />
+              <InstructionContent key={activity.id} activity={activity} course={course} courses={courses} showLesson={!!firstLessonTask || !!course.lessons[hash]} onComplete={markComplete} nextHref={nextHref} />
             </div>
           </div>
           <footer className="instruction-footer">
             {previous ? <a href={courseLink(course, previous.id)}>← Previous</a> : <a href="/">← Dashboard</a>}
             <span>{index + 1} of {course.activity_count}</span>
-            {next ? <a className="next" href={courseLink(course, next.id)}>Next <span aria-hidden="true">→</span></a> : <a className="next" href={course.id === 'git' ? '/course.html?course=github' : '/'}>{course.id === 'git' ? 'GitHub' : 'Dashboard'} <span aria-hidden="true">→</span></a>}
+            {activity.type === 'quiz' && <a href={nextHref}>Skip for now</a>}
           </footer>
         </section>
-        {activity.type !== 'quiz' && <TerminalPanel key={`${course.id}-${activity.id}`} activity={activity} courseId={course.id} focused={workspaceFocused} onFocusChange={setWorkspaceFocused} onComplete={markComplete} />}
+        {activity.type !== 'quiz' && <PracticeWorkspace key={`${course.id}-${activity.id}`} activity={activity} courseId={course.id} focused={workspaceFocused} onFocusChange={setWorkspaceFocused} onComplete={markComplete} onAliases={setAliases} nextHref={nextHref} nextLabel={next ? 'Next lesson' : course.id === 'git' ? 'Continue to GitHub' : 'Back to courses'} />}
       </main>
     </div>
-  </div>;
+  </div></CommitAliases.Provider>;
 }

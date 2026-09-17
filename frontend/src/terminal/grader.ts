@@ -1,7 +1,9 @@
 import type { Activity } from '../content/types';
-import type { WorkspaceSnapshot } from './types';
+import type { CommandRecord, WorkspaceSnapshot } from './types';
+import { ignoredPath, parseShell } from './shell';
+import { checkLessonOutcome } from './outcomes';
 
-export type CommandRecord = { command: string; failed: boolean };
+export type { CommandRecord } from './types';
 export type GradeCheck = { id: string; label: string; passed: boolean; expected: string; actual: string };
 export type GradeResult = { passed: boolean; checks: GradeCheck[] };
 
@@ -18,7 +20,8 @@ function solutionCommands(activity: Activity) {
 }
 
 function normalizeOperation(command: string) {
-  const parts: string[] = command.match(/"[^"]*"|'[^']*'|\S+/g) ?? [];
+  let parts: string[];
+  try { parts = parseShell(command)[0]?.args ?? []; } catch { return ''; }
   const name = parts[0]?.toLowerCase();
   if (!name || !commandNames.has(name)) return '';
   if (name !== 'git') return name === 'dir' ? 'ls' : name === 'type' ? 'cat' : name === 'copy' ? 'cp' : name === 'ren' ? 'mv' : name === 'del' ? 'rm' : name === 'md' ? 'mkdir' : name === 'rd' ? 'rmdir' : name;
@@ -29,8 +32,10 @@ function normalizeOperation(command: string) {
   if (sub === 'reset' && parts.some(part => part.startsWith('--hard'))) return 'git reset --hard';
   if (sub === 'reset' && parts.some(part => part.startsWith('--soft'))) return 'git reset --soft';
   if (sub === 'restore' && parts.includes('--staged')) return 'git restore --staged';
+  if (sub === 'reset' && parts.length > 2 && !parts.some(part => part.startsWith('--')) && !/^HEAD[~^]/.test(parts[2])) return 'git restore --staged';
+  if (sub === 'checkout' && parts.includes('--')) return 'git restore';
   if (sub === 'diff' && (parts.includes('--staged') || parts.includes('--cached'))) return 'git diff --staged';
-  return `git ${sub}`;
+  return `git ${sub === 'checkout' ? 'switch' : sub}`;
 }
 
 function expectedOperations(activity: Activity): string[] {
@@ -51,66 +56,60 @@ function tagFromCommand(command: string) {
 }
 
 function ignoredBySnapshot(path: string, snapshot: WorkspaceSnapshot) {
-  if (!snapshot.repo) return false;
-  const rules = snapshot.files[`${snapshot.repo}/.gitignore`];
-  if (!rules || path === `${snapshot.repo}/.gitignore`) return false;
-  const relative = path.slice(snapshot.repo.length + 1);
-  return rules.split('\n').map(line => line.trim()).filter(line => line && !line.startsWith('#')).some(pattern => {
-    const clean = pattern.replace(/^\//, '').replace(/\/$/, '');
-    return relative === clean || relative.startsWith(`${clean}/`) || (!clean.includes('/') && relative.split('/').includes(clean));
-  });
+  return !snapshot.tracked.includes(path) && ignoredPath(path, snapshot.repo, snapshot.files);
 }
 
 function hasWorkspaceChange(before: WorkspaceSnapshot, after: WorkspaceSnapshot) {
-  return JSON.stringify(before.files) !== JSON.stringify(after.files) || before.cwd !== after.cwd || before.repo !== after.repo || before.branch !== after.branch || before.head !== after.head || before.commits.length !== after.commits.length || before.staged.length !== after.staged.length || before.stashCount !== after.stashCount || JSON.stringify(before.branches) !== JSON.stringify(after.branches) || JSON.stringify(before.remotes) !== JSON.stringify(after.remotes) || JSON.stringify(before.tags) !== JSON.stringify(after.tags);
+  return JSON.stringify(before.files) !== JSON.stringify(after.files) || JSON.stringify(before.directories) !== JSON.stringify(after.directories) || before.cwd !== after.cwd || before.repo !== after.repo || before.branch !== after.branch || before.head !== after.head || before.commits.length !== after.commits.length || JSON.stringify(before.index) !== JSON.stringify(after.index) || before.stashCount !== after.stashCount || JSON.stringify(before.branches) !== JSON.stringify(after.branches) || JSON.stringify(before.remotes) !== JSON.stringify(after.remotes) || JSON.stringify(before.tags) !== JSON.stringify(after.tags);
 }
 
-function operationSatisfied(operation: string, commands: CommandRecord[], response: string) {
+function operationSatisfied(operation: string, commands: CommandRecord[]) {
   const successful = commands.filter(item => !item.failed).map(item => normalizeOperation(item.command));
   if (successful.includes(operation)) return true;
-  const words = operation.split(' ');
-  return response.toLowerCase().includes(words.join(' '));
+  return false;
 }
 
 export function gradeActivity(activity: Activity, courseId: 'git' | 'github', before: WorkspaceSnapshot, after: WorkspaceSnapshot, commands: CommandRecord[], response: string): GradeResult {
-  const operations = expectedOperations(activity);
+  const operations = courseId === 'git' ? expectedOperations(activity) : [];
   const authoredCommands = solutionCommands(activity);
   const checks: GradeCheck[] = operations.map((operation, index) => {
-    const passed = operationSatisfied(operation, commands, response);
+    // A merge that stops for a conflict exits nonzero. Finishing that merge is
+    // evidenced by its new two-parent commit, including for the real Git shell.
+    const passed = operationSatisfied(operation, commands) || operation === 'git merge' && commands.some(item => normalizeOperation(item.command) === 'git merge') && !after.conflicts?.length && after.commits.some(commit => (commit.parents?.length ?? 0) > 1 && !before.commits.some(old => old.id === commit.id));
     return { id: `operation-${index}`, label: `Use ${operation}`, passed, expected: `A successful ${operation} step`, actual: passed ? 'Completed' : 'Not completed yet' };
   });
 
   if (operations.some(operation => stateChanging.has(operation))) {
-    const changed = hasWorkspaceChange(before, after);
+    const changed = hasWorkspaceChange(before, after) || ['gp053', 'gp065'].includes(activity.id) && commands.some(item => !item.failed && /git stash (apply|pop)/.test(item.command));
     checks.push({ id: 'workspace-state', label: 'Produce the requested workspace change', passed: changed, expected: 'Files, repository history, branch, staging area, or location changes', actual: changed ? 'Workspace state changed' : 'Workspace still matches its starting state' });
   }
   if (operations.some(operation => operation.startsWith('git commit'))) {
-    const committed = after.commits.length > before.commits.length || commands.some(item => !item.failed && normalizeOperation(item.command).startsWith('git commit'));
+    const committed = after.commits.some(commit => !before.commits.some(old => old.id === commit.id));
     checks.push({ id: 'commit-state', label: 'Record the requested commit', passed: committed, expected: 'A new or amended commit', actual: committed ? 'Commit recorded' : 'No completed commit found' });
   }
   if (operations.some(operation => operation === 'git switch -c')) {
     const branch = authoredCommands.map(command => command.match(/^git\s+(?:switch|checkout)\s+(?:-c|-b)\s+([^\s]+)/i)?.[1]).find(Boolean);
     const expectedBranch = branch && /^[\w./-]+$/.test(branch) ? branch : null;
-    const branched = expectedBranch ? after.branch === expectedBranch : after.branch !== before.branch;
-    checks.push({ id: 'branch-state', label: 'Work on the requested branch', passed: branched, expected: expectedBranch ? `Current branch is ${expectedBranch}` : 'Current branch differs from the starting branch', actual: `Current branch: ${after.branch}` });
+    const branched = expectedBranch ? after.branches.includes(expectedBranch) : after.branches.some(branch => !before.branches.includes(branch));
+    checks.push({ id: 'branch-state', label: 'Create the requested branch', passed: branched, expected: expectedBranch ? `Branch ${expectedBranch} exists` : 'A new branch exists', actual: `Branches: ${after.branches.join(', ')}` });
   }
   if (operations.includes('git init') || operations.includes('git clone')) {
     const repositoryCreated = !!after.repo && after.repo !== before.repo;
     checks.push({ id: 'repository-state', label: 'Create the requested repository', passed: repositoryCreated, expected: 'A new repository in the browser workspace', actual: repositoryCreated ? `Repository: ${after.repo}` : 'No new repository found' });
   }
   if (operations.includes('git tag')) {
-    const tag = authoredCommands.filter(command => /^git\s+tag\b/i.test(command)).map(tagFromCommand).find(Boolean);
+    const tag = authoredCommands.filter(command => /^git\s+tag\b/i.test(command) && !/\s-(?:d|l)\b/.test(command)).map(tagFromCommand).find(Boolean);
     const tagged = tag ? after.tags.includes(tag) : after.tags.length > before.tags.length;
-    checks.push({ id: 'tag-state', label: 'Create the requested tag', passed: tagged, expected: tag ? `Tag ${tag}` : 'A new tag', actual: after.tags.length ? after.tags.join(', ') : 'No tags found' });
+    if (tag) checks.push({ id: 'tag-state', label: 'Create the requested tag', passed: tagged, expected: `Tag ${tag}`, actual: after.tags.length ? after.tags.join(', ') : 'No tags found' });
   }
   if (operations.includes('git remote')) {
     const remote = authoredCommands.map(command => command.match(/^git\s+remote\s+add\s+([^\s]+)/i)?.[1]).find(Boolean);
     if (remote) checks.push({ id: 'remote-state', label: 'Configure the requested remote', passed: remote in after.remotes, expected: `Remote ${remote}`, actual: Object.keys(after.remotes).length ? Object.keys(after.remotes).join(', ') : 'No remotes configured' });
   }
-  if (/working (?:tree|directory) (?:is )?clean/i.test(criteriaText(activity))) {
+  if (courseId === 'git' && /working (?:tree|directory) (?:is )?clean|clean main/i.test(criteriaText(activity))) {
     const committed = after.commits.find(commit => commit.id === after.head)?.files ?? {};
     const relevant = new Set([...Object.keys(committed), ...Object.keys(after.files).filter(path => path.startsWith(`${after.repo}/`) && !ignoredBySnapshot(path, after))]);
-    const clean = after.staged.length === 0 && Object.keys(after.index).length === 0 && [...relevant].every(path => after.tracked.includes(path) && committed[path] === after.files[path]);
+    const clean = !after.conflicts?.length && after.staged.length === 0 && Object.keys(after.index).length === 0 && [...relevant].every(path => after.tracked.includes(path) && committed[path] === after.files[path]);
     checks.push({ id: 'clean-state', label: 'Leave the working tree clean', passed: clean, expected: 'No staged, modified, or untracked files', actual: clean ? 'Working tree is clean' : 'Working tree still contains changes' });
   }
 
@@ -120,10 +119,12 @@ export function gradeActivity(activity: Activity, courseId: 'git' | 'github', be
     const hasResponse = response.trim().length >= 40;
     checks.push({ id: 'written-response', label: 'Document your GitHub decision or result', passed: hasResponse, expected: 'A concrete response of at least 40 characters in RESPONSE.md', actual: hasResponse ? `${response.trim().length} characters written` : `${response.trim().length} characters written` });
     if (concepts.length) {
-      const covered = concepts.filter(term => response.toLowerCase().includes(term) || commands.some(item => item.command.toLowerCase().includes(term)));
+      const covered = concepts.filter(term => response.toLowerCase().includes(term) || commands.some(item => !item.failed && item.command.toLowerCase().includes(term)));
       checks.push({ id: 'criteria-concepts', label: 'Address the named completion criteria', passed: covered.length === concepts.length, expected: concepts.join(', '), actual: covered.length ? covered.join(', ') : 'No required concepts found yet' });
     }
   }
+
+  if (courseId === 'git') checks.push(...checkLessonOutcome(activity.id, before, after, commands));
 
   if (!checks.length) {
     const attempted = commands.some(item => !item.failed) || response.trim().length >= 40;
